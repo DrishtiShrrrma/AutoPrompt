@@ -10,6 +10,11 @@ import pdfminer.high_level
 import mammoth
 import pptx
 from bs4 import BeautifulSoup
+import base64
+from PIL import Image
+from io import BytesIO
+import os
+import uuid
 
 # Initialize the browser instance
 browser = SimpleTextBrowser()
@@ -47,7 +52,7 @@ def navigational_web_search_tool(query: str) -> str:
 
 @tool(name="visit_page", description="Visit a webpage at a given URL and return its text.")
 def visit_page_tool(url: str) -> str:
-    """Visit a webpage at a given URL and return its text."""
+    """Visit a webpage at a given URL and return its text."""  
     browser.visit_page(url)
     header = _browser_state()
     return header + "\n=======================\n" + browser.viewport
@@ -197,24 +202,73 @@ def docx_conversion_tool(file_path: str, file_extension: Optional[str] = None) -
     with open(file_path, "rb") as docx_file:
         result = mammoth.convert_to_html(docx_file)
         html_content = result.value
+        soup = BeautifulSoup(html_content, "html.parser")
+        markdown_text = MarkdownConverter().convert_soup(soup)
 
-    return html_content
+    return markdown_text
 
-@tool(name="pptx_conversion", description="Convert a PPTX file into a markdown text.")
+@tool(name="pptx_conversion", description="Convert a PPTX file into markdown text.")
 def pptx_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
-    """Convert a PPTX file into a markdown text."""
+    """Convert a PPTX file into markdown text."""
     if file_extension.lower() != ".pptx":
         return "Error: Invalid file extension for PPTX."
 
     md_content = ""
     presentation = pptx.Presentation(file_path)
-
+    slide_num = 0
     for slide in presentation.slides:
+        slide_num += 1
+        md_content += f"\n\n<!-- Slide number: {slide_num} -->\n"
+
         title = slide.shapes.title
-        md_content += f"# {title.text}\n"
-        
         for shape in slide.shapes:
             if shape.has_text_frame:
-                md_content += f"{shape.text}\n"
+                if shape == title:
+                    md_content += "# " + shape.text.lstrip() + " "
+                else:
+                    md_content += shape.text + " "
 
     return md_content
+
+@tool(name="visualizer", description="A tool that can answer questions about attached images.")
+def visualizer_tool(image_path: str, question: Optional[str] = None) -> str:
+    """A tool that can answer questions about attached images."""
+    
+    add_note = False
+    if not question:
+        add_note = True
+        question = "Please write a detailed caption for this image."
+
+    base64_image = encode_image(image_path)
+
+    payload = {
+        "model": "gpt-4o",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": question
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 500
+    }
+    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+    try:
+        output = response.json()['choices'][0]['message']['content']
+    except Exception:
+        raise Exception(f"Response format unexpected: {response.json()}")
+
+    if add_note:
+        output = f"You did not provide a particular question, so here is a detailed caption for the image: {output}"
+
+    return output
