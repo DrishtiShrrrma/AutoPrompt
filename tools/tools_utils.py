@@ -3,6 +3,13 @@ from typing import Optional
 from .browser import SimpleTextBrowser
 import requests
 import re
+import mimetypes
+from markdownify import MarkdownConverter
+from youtube_transcript_api import YouTubeTranscriptApi
+import pdfminer.high_level
+import mammoth
+import pptx
+from bs4 import BeautifulSoup
 
 # Initialize the browser instance
 browser = SimpleTextBrowser()
@@ -62,7 +69,7 @@ def download_file_tool(url: str) -> str:
     with open(file_path, "wb") as f:
         f.write(response.content)
 
-    if "pdf" in extension or "txt" in extension or "htm" in extension:
+    if "pdf" in extension or "txt" in extension or "htm":
         raise Exception("Do not use this tool for PDF/TXT/HTML files, use visit_page instead.")
     
     return f"File was downloaded and saved under path {file_path}."
@@ -116,3 +123,98 @@ def find_archived_url_tool(url: str, date: str) -> str:
     browser.visit_page(closest["url"])
     header = _browser_state()
     return f"Web archive for URL {url}, snapshot taken at date {closest['timestamp'][:8]}:\n" + header + "\n=======================\n" + browser.viewport
+
+# Newly added tools from mdconvert.py
+
+@tool(name="plain_text_conversion", description="Convert a plain text file into a text string.")
+def plain_text_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
+    """Convert a plain text file into a text string."""
+    if file_extension == "":
+        return "Error: Invalid file extension."
+
+    content_type, encoding = mimetypes.guess_type(f"__placeholder{file_extension}")
+
+    with open(file_path, "rt") as file_handle:
+        text_content = file_handle.read()
+
+    return text_content
+
+@tool(name="html_conversion", description="Convert an HTML file into markdown text.")
+def html_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
+    """Convert an HTML file into markdown text."""
+    if file_extension.lower() not in [".html", ".htm"]:
+        return "Error: Invalid file extension for HTML."
+
+    with open(file_path, "rt") as file_handle:
+        html_content = file_handle.read()
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    
+    # Remove script and style blocks
+    for script in soup(["script", "style"]):
+        script.extract()
+
+    body_elm = soup.find("body")
+    markdown_text = ""
+    if body_elm:
+        markdown_text = MarkdownConverter().convert_soup(body_elm)
+    else:
+        markdown_text = MarkdownConverter().convert_soup(soup)
+
+    return markdown_text
+
+@tool(name="youtube_transcript", description="Extract the transcript of a YouTube video using the video URL.")
+def youtube_transcript_tool(url: str) -> str:
+    """Extract the transcript of a YouTube video using the video URL."""
+    parsed_url = urlparse(url)
+    params = parse_qs(parsed_url.query)
+
+    if "v" not in params:
+        return "Error: Invalid YouTube URL."
+
+    video_id = params["v"][0]
+    transcript = YouTubeTranscriptApi.get_transcript(video_id)
+
+    transcript_text = " ".join([part["text"] for part in transcript])
+
+    return transcript_text
+
+@tool(name="pdf_conversion", description="Convert a PDF file into a text string.")
+def pdf_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
+    """Convert a PDF file into a text string."""
+    if file_extension.lower() != ".pdf":
+        return "Error: Invalid file extension for PDF."
+
+    text_content = pdfminer.high_level.extract_text(file_path)
+    return text_content
+
+@tool(name="docx_conversion", description="Convert a DOCX file into a markdown text.")
+def docx_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
+    """Convert a DOCX file into a markdown text."""
+    if file_extension.lower() != ".docx":
+        return "Error: Invalid file extension for DOCX."
+
+    with open(file_path, "rb") as docx_file:
+        result = mammoth.convert_to_html(docx_file)
+        html_content = result.value
+
+    return html_content
+
+@tool(name="pptx_conversion", description="Convert a PPTX file into a markdown text.")
+def pptx_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
+    """Convert a PPTX file into a markdown text."""
+    if file_extension.lower() != ".pptx":
+        return "Error: Invalid file extension for PPTX."
+
+    md_content = ""
+    presentation = pptx.Presentation(file_path)
+
+    for slide in presentation.slides:
+        title = slide.shapes.title
+        md_content += f"# {title.text}\n"
+        
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                md_content += f"{shape.text}\n"
+
+    return md_content
