@@ -1,6 +1,6 @@
 from langchain_core.tools import tool
 from typing import Optional
-from .browser import SimpleTextBrowser
+from gaia_tools.browser import SimpleTextBrowser
 import requests
 import re
 import mimetypes
