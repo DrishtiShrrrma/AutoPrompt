@@ -6,6 +6,7 @@ import re
 import mimetypes
 from markdownify import MarkdownConverter
 from youtube_transcript_api import YouTubeTranscriptApi
+from urllib.parse import urlparse, parse_qs
 import pdfminer.high_level
 import mammoth
 import pptx
@@ -129,7 +130,7 @@ def find_archived_url_tool(url: str, date: str) -> str:
     header = _browser_state()
     return f"Web archive for URL {url}, snapshot taken at date {closest['timestamp'][:8]}:\n" + header + "\n=======================\n" + browser.viewport
 
-# Newly added tools from mdconvert.py
+# tools from mdconvert.py
 
 @tool(name="plain_text_conversion", description="Convert a plain text file into a text string.")
 def plain_text_conversion_tool(file_path: str, file_extension: Optional[str] = None) -> str:
@@ -229,6 +230,12 @@ def pptx_conversion_tool(file_path: str, file_extension: Optional[str] = None) -
                     md_content += shape.text + " "
 
     return md_content
+
+def encode_image(image_path: str) -> str:
+    with open(image_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+    return encoded_string
+
 
 @tool(name="visualizer", description="A tool that can answer questions about attached images.")
 def visualizer_tool(image_path: str, question: Optional[str] = None) -> str:
